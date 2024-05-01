@@ -1,15 +1,17 @@
-﻿using System.Net;
+﻿using Contracts;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 
 
 public class ChatServer
 {
     const short port = 4040;
-    const string JOIN = "$<Join>";
-    const string LEAVE = "$<Leave>";
+
+    const int MAX_MEMBERS = 2;
     UdpClient server;
-    IPEndPoint clientEndPoint = null;
+    IPEndPoint? clientEndPoint = null;
     List<IPEndPoint> members;
 
     public ChatServer()
@@ -26,11 +28,13 @@ public class ChatServer
 
             switch (message)
             {
-                case JOIN:
+                case Commands.JOIN:
                     AddMember(clientEndPoint);
+                    SendNotification(clientEndPoint, Commands.JOINC);
                     break;
-                case LEAVE:
+                case Commands.LEAVE:
                     RemoveMember(clientEndPoint);
+
                     break;
                 default:
                     Console.WriteLine($"Got message {message,-20} from : {clientEndPoint} " +
@@ -40,12 +44,25 @@ public class ChatServer
             }
         }
     }
+
     private void AddMember(IPEndPoint clientEndPoint)
     {
-        if (!members.Contains(clientEndPoint))
+        if (members.Count < MAX_MEMBERS)
         {
-            members.Add(clientEndPoint);
-            Console.WriteLine("Member was added");
+            if (!members.Contains(clientEndPoint))
+            {
+                members.Add(clientEndPoint);
+                Console.WriteLine("Member was added");
+            }
+            else
+                Console.WriteLine("Member is already exists");
+        }
+        else
+        {
+            Console.ForegroundColor = ConsoleColor.Red;
+            Console.WriteLine("The limit of participants has been reached");
+            Console.ResetColor();
+            SendNotification(clientEndPoint, Commands.FULL);
         }
     }
     private void RemoveMember(IPEndPoint clientEndPoint)
@@ -64,10 +81,18 @@ public class ChatServer
             await server.SendAsync(data, data.Length, member);
         }
     }
+    private async void SendNotification(IPEndPoint clientEndPoint, string msg)
+    {
+        MessageInfo clientMsg = new MessageInfo(msg, "");
+        string message = JsonSerializer.Serialize<MessageInfo>(clientMsg);
+        byte[] data = Encoding.Unicode.GetBytes(message);
+
+        await server.SendAsync(data, data.Length, clientEndPoint);
+    }
+
 }
 internal class Program
 {
-
     private static void Main(string[] args)
     {
         ChatServer server = new ChatServer();

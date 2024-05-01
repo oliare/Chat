@@ -1,4 +1,5 @@
-﻿using System.Collections.ObjectModel;
+﻿using Contracts;
+using System.Collections.ObjectModel;
 using System.Configuration;
 using System.Net;
 using System.Net.Sockets;
@@ -25,6 +26,7 @@ namespace MessageClientApp
             serverPoint = new IPEndPoint(IPAddress.Parse(serverAddress), serverPort);
             client = new UdpClient();
             messages = new ObservableCollection<MessageInfo>();
+
             this.DataContext = messages;
         }
 
@@ -64,40 +66,68 @@ namespace MessageClientApp
 
         private void JoinButton_Click(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(usernameBox.Text) 
-                || string.IsNullOrWhiteSpace(usernameBox.Text))
-                MessageBox.Show("Enter your name before joining the chat");
-
-            else
+            try
             {
-                string message = "$<Join>";
-                byte[] data = Encoding.Unicode.GetBytes(message);
-                string name = usernameBox.Text;
-                textLabel.Content = name;
-                usernameBox.Visibility = Visibility.Hidden;
-                textLabel.Visibility = Visibility.Visible;
-                MessageBox.Show("Welcome to our chat!!");
-                SendMessage(data);
-                Listener();
-                isJoined = true;
-            }
-        }
+                if (string.IsNullOrEmpty(usernameBox.Text)
+              || string.IsNullOrWhiteSpace(usernameBox.Text))
+                    MessageBox.Show("Enter your name before joining the chat");
+                else
+                {
 
+                    byte[] data = Encoding.Unicode.GetBytes(Commands.JOIN);
+                    string name = usernameBox.Text;
+                    textLabel.Content = name;
+                    usernameBox.Visibility = Visibility.Hidden;
+                    textLabel.Visibility = Visibility.Visible;
+                    SendMessage(data);
+                    Listener();
+
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message);
+                client.Dispose();
+            }
+
+        }
         private async void Listener()
         {
             while (true)
             {
+
                 var res = await client.ReceiveAsync();
                 string message = Encoding.Unicode.GetString(res.Buffer);
                 MessageInfo clientMsg = JsonSerializer.Deserialize<MessageInfo>(message)!;
+                if (clientMsg.Message == Commands.FULL)
+                {
+                    MessageBox.Show("The chat is currently full :(");
+                    usernameBox.Visibility = Visibility.Visible;
+                    return;
+                }
+                if (clientMsg.Message == Commands.JOINC)
+                {
+                    if (!isJoined)
+                    {
+                        MessageBox.Show("Welcome to our chat!!");
+                        isJoined = true;
+                    }
+                    continue;
+                }
                 messages.Add(clientMsg);
             }
+
+        }
+        private void Leave()
+        {
+            string message = Commands.LEAVE;
+            byte[] data = Encoding.Unicode.GetBytes(message);
+            SendMessage(data);
+            isJoined = false;
         }
         private void LeaveButton_Click(object sender, RoutedEventArgs e)
         {
-            string message = "$<Leave>";
-            byte[] data = Encoding.Unicode.GetBytes(message);
-            SendMessage(data);
+            Leave();
             usernameBox.Clear();
             msgTextBox.Clear();
             messages.Clear();
@@ -106,21 +136,24 @@ namespace MessageClientApp
             usernameBox.Visibility = Visibility.Visible;
             textLabel.Visibility = Visibility.Hidden;
         }
-    }
-    public class MessageInfo
-    {
-        public string Message { get; set; }
-        public string Name { get; set; }
-        public DateTime Time { get; set; }
-        public MessageInfo(string message, string name)
+
+        private void ListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            Message = message;
-            Name = name;
-            Time = DateTime.Now;
+            var selected = (MessageInfo)listBox.SelectedItem;
+
+            if (selected != null)
+            {
+                var win = new PrivateMsg(selected.Name);
+                win.usernameBox.Text = selected.Name;
+                win.Show();
+            }
         }
-        public override string ToString()
+
+        private void Window_Closed(object sender, EventArgs e)
         {
-            return $"{Name} -- {Message,-20} {Time.ToShortTimeString()}";
+            Leave();
+            client.Dispose();
         }
     }
+
 }
